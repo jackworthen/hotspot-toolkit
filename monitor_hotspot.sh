@@ -8,6 +8,19 @@ if [ -z "$INTERFACE" ]; then
     exit 1 
 fi 
 
+# --- Fetch Hotspot Info ---
+# We look for the active connection on our interface to get SSID and Security
+CONN_NAME=$(nmcli -t -f DEVICE,NAME connection show --active | grep "^$INTERFACE:" | cut -d: -f2)
+SSID=$(nmcli -t -f 802-11-wireless.ssid connection show "$CONN_NAME" | cut -d: -f2)
+SEC_TYPE=$(nmcli -t -f 802-11-wireless-security.key-mgmt connection show "$CONN_NAME" | cut -d: -f2)
+
+# Format Security string for the banner
+if [ -z "$SEC_TYPE" ] || [ "$SEC_TYPE" == "none" ]; then
+    SECURITY="Open"
+else
+    SECURITY=$(echo "$SEC_TYPE" | tr '[:lower:]' '[:upper:]')
+fi
+
 # Function to convert bytes to human-readable format
 human_readable() {
     local bytes=$1
@@ -37,7 +50,7 @@ while true; do
 
     clear 
     echo -e "\e[38;5;208m==============================================================================\e[0m" 
-    echo -e "\e[38;5;208m    HOTSPOT MONITOR  |  Interface: $INTERFACE  |  Devices: $COUNT \e[0m" 
+    echo -e "\e[38;5;208m      SSID: $SSID ($SECURITY)  |  Interface: $INTERFACE  |  Devices: $COUNT \e[0m" 
     echo -e "\e[38;5;208m==============================================================================\e[0m" 
     echo -e "Last Updated: $(date +%H:%M:%S) -- Press [Ctrl+C] to exit\n" 
 
@@ -54,7 +67,6 @@ while true; do
 
                 STATION_INFO=$(sudo iw dev "$INTERFACE" station get "$mac")
                 
-                # Fixed: Match only the primary signal line and take only the first number
                 SIGNAL=$(echo "$STATION_INFO" | grep "signal:" | awk '{print $2}' | head -n1)
                 [ -z "$SIGNAL" ] && SIGNAL="N/A" 
 
