@@ -1,9 +1,27 @@
 #!/bin/bash
+
+# Define Colors
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+clear
+echo -e "${CYAN}"
+cat << "EOF"
+  _    _  ____ _______  _____ _____   ____ _______ 
+ | |  | |/ __ \__   __|/ ____|  __ \ / __ \__   __|
+ | |__| | |  | | | |  | (___ | |__) | |  | | | |   
+ |  __  | |  | | | |   \___ \|  ___/| |  | | | |   
+ | |  | | |__| | | |   ____) | |    | |__| | | |   
+ |_|  |_|\____/  |_|  |_____/|_|     \____/  |_|                                                      
+EOF
+echo -e "${NC}" 
+echo "Toolkit v1.1"
+echo 
 # Save the current reg domain so we can restore it later
 CURRENT_REG=$(iw reg get | grep "^country" | awk '{print $2}' | sed 's/://' | head -n 1)
 echo "$CURRENT_REG" > /tmp/previous_reg_domain
 
-clear
+#clear
 
 # --- Regulatory Domain Selection ---
 echo -e "\e[38;5;208mConfigure Regulatory Domain\e[0m"
