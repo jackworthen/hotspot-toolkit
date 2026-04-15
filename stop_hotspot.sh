@@ -1,12 +1,30 @@
 #!/bin/bash
 
-# 1. Deactivate the connection first (graceful shutdown)
-sudo nmcli connection down OpenHotspot 2>/dev/null
+CON_NAME="OpenHotspot"
+PREV_REG_FILE="/tmp/previous_reg_domain"
+RESTORED=false
 
-# 2. Delete the profile entirely
-sudo nmcli connection delete OpenHotspot
+# 1. Handle Regulatory Domain Restoration FIRST
+if [ -f "$PREV_REG_FILE" ]; then
+    ORIGINAL_REG=$(cat "$PREV_REG_FILE")
+    echo -e "\e[38;5;208mRestoring regulatory domain to $ORIGINAL_REG...\e[0m"
+    sudo iw reg set "$ORIGINAL_REG"
+    rm "$PREV_REG_FILE"
+    RESTORED=true
+fi
 
-# 3. (Optional) Repeat for the Secure profile if you created one
-sudo nmcli connection delete SecureHotspot 2>/dev/null
-
-echo -e "\e[31mHotspot has been stopped and the configuration removed.\e[0m"
+# 2. Check for and clean up NetworkManager profiles
+if nmcli connection show "$CON_NAME" >/dev/null 2>&1; then
+    echo -e "\e[31mStopping active hotspot and removing configuration...\e[0m"
+    sudo nmcli connection down "$CON_NAME" 2>/dev/null
+    sudo nmcli connection delete "$CON_NAME" 2>/dev/null
+    sudo nmcli connection delete "SecureHotspot" 2>/dev/null
+    echo -e "\e[32mHotspot cleaned up successfully.\e[0m"
+else
+    # If no hotspot profile but we restored the reg domain
+    if [ "$RESTORED" = true ]; then
+         echo -e "\e[32mRegulatory domain restored (no active hotspot profile found).\e[0m"
+    else
+         echo -e "\e[33mNo active hotspot found and no previous domain record exists.\e[0m"
+    fi
+fi

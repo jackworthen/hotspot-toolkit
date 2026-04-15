@@ -9,12 +9,23 @@ if [ -z "$INTERFACE" ]; then
 fi 
 
 # --- Fetch Hotspot Info ---
-# We look for the active connection on our interface to get SSID and Security
 CONN_NAME=$(nmcli -t -f DEVICE,NAME connection show --active | grep "^$INTERFACE:" | cut -d: -f2)
 SSID=$(nmcli -t -f 802-11-wireless.ssid connection show "$CONN_NAME" | cut -d: -f2)
 SEC_TYPE=$(nmcli -t -f 802-11-wireless-security.key-mgmt connection show "$CONN_NAME" | cut -d: -f2)
 
-# Format Security string for the banner
+# New: Fetch Channel and Frequency Info
+CHAN_INFO=$(iw dev "$INTERFACE" info)
+CHANNEL=$(echo "$CHAN_INFO" | grep "channel" | awk '{print $2}')
+FREQ_MHZ=$(echo "$CHAN_INFO" | grep "channel" | awk '{print $3}' | tr -d '(|MHz,')
+
+# Determine Band based on MHz
+if [ "$FREQ_MHZ" -lt 3000 ]; then
+    BAND="2.4 GHz"
+else
+    BAND="5 GHz"
+fi
+
+# Format Security string
 if [ -z "$SEC_TYPE" ] || [ "$SEC_TYPE" == "none" ]; then
     SECURITY="Open"
 else
@@ -50,9 +61,10 @@ while true; do
 
     clear 
     echo -e "\e[38;5;208m==============================================================================\e[0m" 
-    echo -e "\e[38;5;208m      SSID: $SSID ($SECURITY)  |  Interface: $INTERFACE  |  Devices: $COUNT \e[0m" 
+    # Updated Banner with Band and Channel
+    echo -e "\e[38;5;208m SSID: $SSID ($SECURITY) | Band: $BAND (Ch: $CHANNEL) | Devices: $COUNT \e[0m" 
     echo -e "\e[38;5;208m==============================================================================\e[0m" 
-    echo -e "Last Updated: $(date +%H:%M:%S) -- Press [Ctrl+C] to exit\n" 
+    echo -e "Interface: $INTERFACE | Updated: $(date +%H:%M:%S) -- Press [Ctrl+C] to exit\n" 
 
     if [ "$COUNT" -eq 0 ]; then 
         echo -e "\e[31m  [!] No devices currently connected.\e[0m" 

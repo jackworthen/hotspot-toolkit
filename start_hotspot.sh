@@ -1,10 +1,28 @@
 #!/bin/bash
+# Save the current reg domain so we can restore it later
+CURRENT_REG=$(iw reg get | grep "^country" | awk '{print $2}' | sed 's/://' | head -n 1)
+echo "$CURRENT_REG" > /tmp/previous_reg_domain
+
 clear
 
-# --- Adapter Selection ---
-echo -e "\e[38;5;208mSelect Wireless Adapter:\e[0m"
+# --- Regulatory Domain Selection ---
+echo -e "\e[38;5;208mConfigure Regulatory Domain\e[0m"
+read -p "Select Country Code [Default: US]: " REG_DOMAIN
+REG_DOMAIN=${REG_DOMAIN:-US} # Default to US if empty
+REG_DOMAIN=${REG_DOMAIN^^}    # Convert to uppercase
 
-# Get Wi-Fi interfaces, filtering out the virtual p2p-dev handles
+if [[ ! "$REG_DOMAIN" =~ ^[A-Z]{2}$ ]]; then
+    echo -e "\e[31mInvalid format. Falling back to US.\e[0m"
+    REG_DOMAIN="US"
+fi
+
+echo -e "\e[38;5;208mUnlocking frequencies for $REG_DOMAIN...\e[0m"
+sudo iw reg set "$REG_DOMAIN"
+sleep 0.5
+
+# --- Adapter Selection ---
+echo
+echo -e "\e[38;5;208mSelect Wireless Adapter:\e[0m"
 AVAILABLE_INTERFACES=$(nmcli device status | grep "wifi" | grep -v "p2p-dev" | awk '{print $1}')
 
 if [ -z "$AVAILABLE_INTERFACES" ]; then
@@ -12,76 +30,79 @@ if [ -z "$AVAILABLE_INTERFACES" ]; then
     exit 1
 fi
 
-# Set the prompt for all 'select' menus
 PS3="> "
-
 select WIFI_IFACE in $AVAILABLE_INTERFACES; do
-    if [ -n "$WIFI_IFACE" ]; then
-        echo -e "\e[32mSelected Adapter: $WIFI_IFACE\e[0m"
-        break
-    else
-        echo -e "\e[31mInvalid selection. Please enter a number from the list.\e[0m"
-    fi
+    if [ -n "$WIFI_IFACE" ]; then break; fi
+done
+
+# --- Band & Channel Selection ---
+echo -e "\n\e[38;5;208mSelect Frequency Band:\e[0m"
+BAND_OPTIONS=("2.4 GHz" "5 GHz")
+select BAND_CHOICE in "${BAND_OPTIONS[@]}"; do
+    case $BAND_CHOICE in
+        "2.4 GHz") 
+            HOTSPOT_BAND="bg"
+            SELECTED_CHANNEL="" # Auto
+            break ;;
+        "5 GHz")   
+            HOTSPOT_BAND="a"
+            echo -en "\e[33mForce a specific non-DFS channel? (y/n): \e[0m"
+            read -n 1 FORCE_DFS
+            echo ""
+            if [[ "$FORCE_DFS" == "y" || "$FORCE_DFS" == "Y" ]]; then
+                echo -e "\e[38;5;208mSelect common non-DFS Channel:\e[0m"
+                # These are generally safe globally, though 149+ varies by region
+                CHAN_OPTIONS=("36" "40" "44" "48" "149" "153" "157" "161")
+                select CHAN_CHOICE in "${CHAN_OPTIONS[@]}"; do
+                    if [ -n "$CHAN_CHOICE" ]; then
+                        SELECTED_CHANNEL="$CHAN_CHOICE"
+                        break
+                    fi
+                done
+            fi
+            break ;;
+        *) echo "Invalid selection." ;;
+    esac
 done
 
 # --- Connection Type Selection ---
 echo -e "\n\e[38;5;208mConnection Type:\e[0m"
-SEC_OPTIONS=("open" "WPA2")
-
-select SECURE_CHOICE in "${SEC_OPTIONS[@]}"; do
+select SECURE_CHOICE in "Open" "WPA2"; do
     if [ "$SECURE_CHOICE" == "WPA2" ]; then
-        echo -e "\e[32mSelected Type: WPA2\e[0m"
-        # Prompt for password immediately
         while true; do
-            read -sp "Enter the WPA2 Password (min 8 chars): " HOTSPOT_PW
+            read -sp "Enter WPA2 Password (min 8 chars): " HOTSPOT_PW
             echo ""
-            if [ ${#HOTSPOT_PW} -ge 8 ]; then
-                break
-            else
-                echo -e "\e[31mPassword too short! WPA2 requires at least 8 characters.\e[0m"
-            fi
+            [[ ${#HOTSPOT_PW} -ge 8 ]] && break || echo -e "\e[31mToo short!\e[0m"
         done
         break
-    elif [ "$SECURE_CHOICE" == "open" ]; then
-        echo -e "\e[32mSelected Type: open\e[0m"
-        break
-    else
-        echo -e "\e[31mInvalid selection. Please choose 1 or 2.\e[0m"
-    fi
+    else break; fi
 done
-
-# --- User Input ---
-echo -e "\n\e[38;5;208mEnter the desired SSID for your Hotspot:\e[0m"
-read -p "> " HOTSPOT_SSID
-
-# We will use a consistent connection name for nmcli management
+echo
+read -p "Enter SSID: " HOTSPOT_SSID
 CON_NAME="OpenHotspot"
 
-# --- Cleanup ---
+# --- Cleanup & Rebuild ---
 sudo nmcli connection down "$CON_NAME" 2>/dev/null
 sudo nmcli connection delete "$CON_NAME" 2>/dev/null
 
-echo -e "\n\e[31mOld configuration removed.\e[0m"
+echo -e "\e[38;5;208mCreating $BAND_CHOICE Hotspot ($REG_DOMAIN)...\e[0m"
 
-# --- Re-building the Connection ---
-echo -e "\e[38;5;208mInitializing Connection Profile for '$HOTSPOT_SSID'...\e[0m"
-
+# Build connection
 if [ "$SECURE_CHOICE" == "WPA2" ]; then
-    # Secure Path
     sudo nmcli connection add type wifi ifname "$WIFI_IFACE" con-name "$CON_NAME" autoconnect no ssid "$HOTSPOT_SSID" mode ap \
-    wifi-sec.key-mgmt wpa-psk \
-    wifi-sec.psk "$HOTSPOT_PW"
+    wifi.band "$HOTSPOT_BAND" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$HOTSPOT_PW"
 else
-    # Open Path
-    sudo nmcli connection add type wifi ifname "$WIFI_IFACE" con-name "$CON_NAME" autoconnect no ssid "$HOTSPOT_SSID" mode ap
+    sudo nmcli connection add type wifi ifname "$WIFI_IFACE" con-name "$CON_NAME" autoconnect no ssid "$HOTSPOT_SSID" mode ap \
+    wifi.band "$HOTSPOT_BAND"
 fi
 
-# --- Final Configuration ---
-echo -e "\e[38;5;208mConfiguring IPv4 sharing...\e[0m"
-sudo nmcli connection modify "$CON_NAME" ipv4.method shared
+# Apply specific channel if selected
+if [ -n "$SELECTED_CHANNEL" ]; then
+    echo -e "\e[32mApplying Channel $SELECTED_CHANNEL...\e[0m"
+    sudo nmcli connection modify "$CON_NAME" wifi.channel "$SELECTED_CHANNEL"
+fi
 
-# Activate the Network
-echo -e "\e[38;5;208mActivating the network...\e[0m"
+sudo nmcli connection modify "$CON_NAME" ipv4.method shared
 sudo nmcli connection up "$CON_NAME"
 
-echo -e "\e[32mHotspot '$HOTSPOT_SSID' ($SECURE_CHOICE) is now active on $WIFI_IFACE.\e[0m"
+echo -e "\e[32mHotspot is active on $WIFI_IFACE in domain $REG_DOMAIN.\e[0m"
