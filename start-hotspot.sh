@@ -1,16 +1,14 @@
 #!/bin/bash
 
 # --- Self-Elevation Logic ---
-# If the Effective User ID is not 0 (root), re-run the script with sudo
 if [[ $EUID -ne 0 ]]; then
     echo -e "\e[31mPrivileged access required.\e[0m"
-    # Re-run the script, passing all original arguments ($@) to the new instance
     exec sudo "$0" "$@"
 fi
 
 # Define Colors
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m' 
 
 clear
 echo -e "${CYAN}"
@@ -23,7 +21,7 @@ cat << "EOF"
  |_|  |_|\____/  |_|  |_____/|_|     \____/  |_|                                                   
 EOF
 echo -e "${NC}" 
-echo "Toolkit v1.1"
+echo "Toolkit v1.3"
 echo 
 
 # Save the current reg domain
@@ -60,6 +58,12 @@ select WIFI_IFACE in $AVAILABLE_INTERFACES; do
     if [ -n "$WIFI_IFACE" ]; then break; fi
 done
 
+# --- MAC Randomization Prompt ---
+echo -e "\n\e[38;5;208mAnonymize MAC Address?\e[0m"
+echo "1) Yes (Randomize)"
+echo "2) No (Use Hardware MAC)"
+read -p "> " MAC_CHOICE
+
 # --- Band & Channel Selection ---
 echo -e "\n\e[38;5;208mSelect Frequency Band:\e[0m"
 BAND_OPTIONS=("2.4 GHz" "5 GHz")
@@ -73,7 +77,7 @@ select BAND_CHOICE in "${BAND_OPTIONS[@]}"; do
             HOTSPOT_BAND="a"
             echo -en "\e[33mForce a specific non-DFS channel? (y/n): \e[0m"
             read -n 1 FORCE_DFS
-            echo ""
+           # echo ""
             if [[ "$FORCE_DFS" == "y" || "$FORCE_DFS" == "Y" ]]; then
                 echo -e "\e[38;5;208mSelect common non-DFS Channel:\e[0m"
                 CHAN_OPTIONS=("36" "40" "44" "48" "149" "153" "157" "161")
@@ -101,6 +105,7 @@ select SECURE_CHOICE in "Open" "WPA2"; do
         break
     else break; fi
 done
+
 echo
 read -p "Enter SSID: " HOTSPOT_SSID
 CON_NAME="OpenHotspot"
@@ -109,7 +114,7 @@ CON_NAME="OpenHotspot"
 nmcli connection down "$CON_NAME" 2>/dev/null
 nmcli connection delete "$CON_NAME" 2>/dev/null
 
-echo -e "\e[38;5;208mCreating $BAND_CHOICE Hotspot ($REG_DOMAIN)...\e[0m"
+echo -e "\e[38;5;208mCreating $BAND_CHOICE Hotspot...\e[0m"
 
 # Build connection
 if [ "$SECURE_CHOICE" == "WPA2" ]; then
@@ -118,6 +123,12 @@ if [ "$SECURE_CHOICE" == "WPA2" ]; then
 else
     nmcli connection add type wifi ifname "$WIFI_IFACE" con-name "$CON_NAME" autoconnect no ssid "$HOTSPOT_SSID" mode ap \
     wifi.band "$HOTSPOT_BAND"
+fi
+
+# --- Apply MAC Randomization if selected ---
+if [ "$MAC_CHOICE" == "1" ]; then
+    echo -e "\e[32mApplying Random MAC Address...\e[0m"
+    nmcli connection modify "$CON_NAME" 802-11-wireless.cloned-mac-address random
 fi
 
 # Apply specific channel if selected
@@ -129,4 +140,8 @@ fi
 nmcli connection modify "$CON_NAME" ipv4.method shared
 nmcli connection up "$CON_NAME"
 
-echo -e "\e[32mHotspot is active on $WIFI_IFACE in domain $REG_DOMAIN.\e[0m"
+# Final Status
+ACTUAL_MAC=$(ip link show "$WIFI_IFACE" | awk '/link\/ether/ {print $2}')
+echo -e "\n\e[32mHotspot is active on $WIFI_IFACE\e[0m"
+echo -e "\e[32mRegulatory Domain: $REG_DOMAIN\e[0m"
+echo -e "\e[32mCurrent MAC Address: $ACTUAL_MAC\e[0m"
