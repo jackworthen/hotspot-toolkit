@@ -22,7 +22,7 @@
 # 📥 Installation
 Clone the repository:
 ```bash
-git clone https://github.com/yourusername/your-repo-name.git
+git clone https://github.com/jackworthen/your-repo-name.git
 cd your-repo-name
 ```
 
