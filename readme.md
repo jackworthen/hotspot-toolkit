@@ -83,4 +83,4 @@ A cleanup utility that:
 This project is licensed under GNU GENERAL PUBLIC LICENSE - see the LICENSE file for details.
 
 
-*Developed by Jack Worthen [@jackworthen](https://github.com/jackworthen)*
+*Developed by [Jack Worthen](https://github.com/jackworthen)*
